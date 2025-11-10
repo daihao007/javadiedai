@@ -1,16 +1,23 @@
+import src.Role;
+import src.User;
+
 import java.util.*;
 
 public class Test {
+    private static final Map<String,User> users=new HashMap<>();
     public static void main(String[] args) {
         // 定义已知命令及其参数数量范围
         Map<String, int[]> commandArgsRange = new HashMap<>();
         commandArgsRange.put("start", new int[]{0, 2}); // 最少0个参数，最多2个参数
         commandArgsRange.put("restart", new int[]{1, 1}); // 恰好1个参数
         commandArgsRange.put("quit", new int[]{0, 0}); // 不接受参数
+        commandArgsRange.put("register",new int[]{5,5});
+        commandArgsRange.put("login",new int[]{2,2});
+        commandArgsRange.put("logout",new int[]{0,1});
+        commandArgsRange.put("printinfo",new int[]{0,1});
 
         List<String> loggedInUsers = new ArrayList<>();
-        loggedInUsers.add("22371001");
-        loggedInUsers.add("22371002");
+        String currentUser=null;
 
         Scanner scanner = new Scanner(System.in);
         System.out.println("请输入命令和参数：");
@@ -32,10 +39,48 @@ public class Test {
                 int[] range = commandArgsRange.get(command);
                 int argCount = parts.length - 1; // 参数数量
                 if (argCount < range[0] || argCount > range[1]) {
-                    System.out.println("Invalid number of arguments for command '" + command + "'");
+                    System.out.println("Illegal argument count");
                     continue;
                 }
-
+                //处理register命令
+                if("register".equals(command)){
+                    //参数顺序：学工号、姓名、密码、确认密码、申请身份
+                    String id=parts[1];
+                    String name=parts[2];
+                    String password=parts[3];
+                    String confirm=parts[4];
+                    String roleRaw=parts[5];
+                    Role role=parseRole(roleRaw);
+                    if(role==null){
+                        System.out.println("Illegal identity");
+                        continue;
+                    }
+                    if(!isValidIdForRole(id,role)){
+                        System.out.println("Illegal user id");
+                        continue;
+                    }
+                    if(users.containsKey(id)){
+                        System.out.println("User id exists");
+                        continue;
+                    }
+                    if(!isValidName(name)){
+                        System.out.println("Illegal user name");
+                        continue;
+                    }
+                    //密码合法性检测
+                    if(!isValidPassword(password)){
+                        System.out.println("Illegal password");
+                        continue;
+                    }
+                    if(!password.equals(confirm)){
+                        System.out.println("Passwords do not match");
+                        continue;
+                    }
+                    User u=new User(id,name,password,role);
+                    users.put(id,u);
+                    System.out.println("Register success");
+                    continue;
+                }
                 // 处理 quit 命令
                 if ("quit".equals(command)) {
                     for (String user : loggedInUsers) {
@@ -43,6 +88,108 @@ public class Test {
                     }
                     System.out.println("----- Good Bye! -----");
                     System.exit(0);
+                }
+                if("login".equals(command)){
+                    String id=parts[1];
+                    String password=parts[2];
+                    if(!isValidIdGeneral(id)){
+                        System.out.println("Illegal user id");
+                        continue;
+                    }
+                    if(!users.containsKey((id))){
+                        System.out.println("User does not exist");
+                        continue;
+                    }
+                    if(loggedInUsers.contains((id))){
+                        System.out.println(id+" is online");
+                        continue;
+                    }
+                    User u=users.get(id);
+                    if(u.getPassword()==null|| !u.getPassword().equals(password)){
+                        System.out.println("Wrong password");
+                        continue;
+                    }
+                    loggedInUsers.add(id);
+                    currentUser=id;
+                    System.out.println("Welcome to ACP, "+ id);
+                    continue;
+                }
+
+                if("logout".equals(command)){
+                    if(argCount==0){
+                        //无参数：当前用户退出
+                        if(currentUser==null){
+                            System.out.println("No one is online");
+                            continue;
+                        }
+                        loggedInUsers.remove(currentUser);
+                        System.out.println(currentUser + "Bye~");
+                        currentUser=null;
+                        continue;
+                    }
+                    else{
+                        String target =parts[1];
+                        if(currentUser==null){
+                            System.out.println("No one is online");
+                            continue;
+                        }
+                        User cur =users.get(currentUser);
+                        if(cur==null||cur.getRole()!=Role.ADMIN){
+                            System.out.println("Permission denied");
+                            continue;
+                        }
+                        if(!isValidIdGeneral(target)){
+                            System.out.println("Illegal user id");
+                            continue;
+                        }
+                        if(!users.containsKey(target)){
+                            System.out.println("User does not exist");
+                            continue;
+                        }
+                        if(!loggedInUsers.contains(target)){
+                            System.out.println(target+" is not online");
+                            continue;
+                        }
+                        System.out.println(target +" Bye~");
+                        continue;
+                    }
+                }
+
+                if("printinfo".equals(command)){
+                    if(argCount==0){
+                        if(currentUser==null){
+                            System.out.println("No one is online");
+                            continue;
+                        }
+                        User u=users.get(currentUser);
+                        if(u==null){
+                            System.out.println("Users does not exist");
+                            continue;
+                        }
+                        printUserInfo(u);
+                        System.out.println("Print information success");
+                        continue;
+                    }
+                    else{
+                        String target=parts[1];
+                        if(currentUser==null){
+                            System.out.println("No one is online");
+                            continue;
+                        }
+                        User cur =users.get(currentUser);
+                        if(cur==null||cur.getRole()!=Role.ADMIN){
+                            System.out.println("Perssion denied");
+                            continue;
+                        }
+                        if(!isValidIdGeneral(target)){
+                            System.out.println("User does not exist");
+                            continue;
+                        }
+                        User targetUser=users.get(target);
+                        printUserInfo(targetUser);
+                        System.out.println("Print information success");
+                        continue;
+                    }
                 }
 
                 // 处理其他合法命令
@@ -58,6 +205,74 @@ public class Test {
             } else {
                 System.out.println("未输入命令");
             }
+        }
+    }
+    private static Role parseRole(String s){
+        if(s==null) return null;
+        String t=s.trim().toLowerCase();
+        if(t.equals("administrator")){
+            return Role.ADMIN;
+        }
+        if(t.equals("teacher")){
+            return Role.TEACHER;
+        }
+        if(t.equals("student")){
+            return Role.STUDENT;
+        }
+        try {
+            return Role.valueOf(s.toUpperCase());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+    private static boolean isValidName(String name){
+        return name !=null && name.matches("^[A-Za-z][A-Za-z_]{3,15}$");
+    }
+    private static boolean isValidPassword(String pwd){
+        if(pwd==null) return false;
+        return pwd.matches("^(?=.{6,16}$)(?=.*[A-Za-z])(?=.*\\d)(?=.*[@_%$])[A-Za-z\\d@_%$]+$");
+    }
+    private static boolean isValidIdForRole(String id,Role role){
+        if(id==null) return false;
+        switch(role){
+            case ADMIN:
+                return id.matches("^AD(?!000)\\d{3}$");
+            case TEACHER:
+                return id.matches("^(?!0{5})\\d{5}$");
+            case STUDENT:
+                String undergrad = "^(19|20|21|22|23|24)(0[1-9]|[1-3][0-9]|4[0-3])[1-6](?!000)\\d{3}$";
+                String master = "^(SY|ZY)\\d{7}$";
+                String phd = "^BY\\d{7}$";
+                return id.matches(undergrad) || id.matches(master) || id.matches(phd);
+            default:
+                return false;
+        }
+    }
+    //通用学工号格式校验（用于login，不依赖role参数）
+    private static boolean isValidIdGeneral(String id){
+        if(id==null) return false;
+        if (id.matches("^AD(?!000)\\d{3}$")) return true;
+        if (id.matches("^(?!0{5})\\d{5}$")) return true;
+        String undergrad = "^(19|20|21|22|23|24)(0[1-9]|[1-3][0-9]|4[0-3])[1-6](?!000)\\d{3}$";
+        String master = "^(SY|ZY)\\d{7}$";
+        String phd = "^BY\\d{7}$";
+        return id.matches(undergrad) || id.matches(master) || id.matches(phd);
+    }
+
+    private  static void printUserInfo(User u){
+        if(u==null) return ;
+        System.out.println("User id: "+u.getId());
+        System.out.println("Name: "+u.getUsername());
+        System.out.println("Type: "+roleToString(u.getRole()));
+    }
+
+    private static String roleToString(Role role){
+        if(role==null) return "";
+        switch(role){
+            case ADMIN: return "Administrator";
+            case TEACHER:return "Teacher";
+            case STUDENT:return "Student";
+            default:return role.name();
         }
     }
 }
