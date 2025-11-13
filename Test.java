@@ -1,10 +1,14 @@
+import src.Course;
 import src.Role;
 import src.User;
 
 import java.util.*;
+import java.text.DecimalFormat;
 
 public class Test {
     private static final Map<String,User> users=new HashMap<>();
+    private static final Map<String, Course> courses=new HashMap<>();
+    private static  int courseCounter=0;
     public static void main(String[] args) {
         // 定义已知命令及其参数数量范围
         Map<String, int[]> commandArgsRange = new HashMap<>();
@@ -15,6 +19,7 @@ public class Test {
         commandArgsRange.put("login",new int[]{2,2});
         commandArgsRange.put("logout",new int[]{0,1});
         commandArgsRange.put("printinfo",new int[]{0,1});
+        commandArgsRange.put("createCourse",new int[]{4,4});
 
         List<String> loggedInUsers = new ArrayList<>();
         String currentUser=null;
@@ -123,8 +128,13 @@ public class Test {
                             continue;
                         }
                         loggedInUsers.remove(currentUser);
-                        System.out.println(currentUser + "Bye~");
-                        currentUser=null;
+                        System.out.println(currentUser + " Bye~");
+                        if(!loggedInUsers.isEmpty()){
+                            currentUser=loggedInUsers.get(loggedInUsers.size()-1);
+                        }
+                        else{
+                            currentUser=null;
+                        }
                         continue;
                     }
                     else{
@@ -150,7 +160,16 @@ public class Test {
                             System.out.println(target+" is not online");
                             continue;
                         }
+                        loggedInUsers.remove((target));
                         System.out.println(target +" Bye~");
+                        if(target.equals(currentUser)){
+                            if(!loggedInUsers.isEmpty()){
+                                currentUser=loggedInUsers.get(loggedInUsers.size()-1);
+                            }
+                            else{
+                                currentUser=null;
+                            }
+                        }
                         continue;
                     }
                 }
@@ -192,6 +211,90 @@ public class Test {
                     }
                 }
 
+                if("createCourse".equals(command)){
+                    if(currentUser==null){
+                        System.out.println("No one is online");
+                        continue;
+                    }
+                    User curUser=users.get(currentUser);
+                    if(curUser==null||curUser.getRole()!=Role.TEACHER){
+                        System.out.println("Permission denied");
+                        continue;
+                    }
+                    long teacherCourseCount = courses.values().stream().filter(c->curUser.getId().equals((c.getTeacherId()))).count();
+                    if(teacherCourseCount>=10){
+                        System.out.println("Course count reaches limit");
+                        continue;
+                    }
+                    String courseName=parts[1];
+                    if(courseName==null|| !courseName.matches("^[A-Za-z][A-Za-z0-9_-]{0,19}$")){
+                        System.out.println("Illegal course name");
+                        continue;
+                    }
+                    boolean nameExists =courses.values().stream().anyMatch(c->curUser.getId().equals(c.getTeacherId())&& courseName.equals(c.getName()));
+                    if(nameExists){
+                        System.out.println("Course name exists");
+                        continue;
+                    }
+                    //课程时间解析
+                    String timeRaw=parts[2];
+                    int day,start,end;
+                    try {
+                        String[] p1 = timeRaw.split("_");
+                        if(p1.length!=2) { throw new IllegalArgumentException(); }
+                        day = Integer.parseInt(p1[0]);
+                        String[] p2 = p1[1].split("-");
+                        if(p2.length!=2) { throw new IllegalArgumentException(); }
+                        start = Integer.parseInt(p2[0]);
+                        end = Integer.parseInt(p2[1]);
+                        if(day < 1 || day > 7 || start < 1 || start > 14 || end < 1 || end > 14 || start > end){
+                            System.out.println("Illegal course time");
+                            continue;
+                        }
+                    } catch (Exception ex) {
+                        System.out.println("Illegal course time");
+                        continue;
+                    }
+                    //时间冲突
+                    boolean conflict = courses.values().stream()
+                            .filter(c -> curUser.getId().equals(c.getTeacherId()))
+                            .anyMatch(c -> c.getDay() == day && !(end < c.getStart() || start > c.getEnd()));
+                    if(conflict){
+                        System.out.println("Course time conflicts");
+                        continue;
+                    }
+                    //学分解析
+                    double credit;
+                    try {
+                        credit = Double.parseDouble(parts[3]);
+                        if(!(credit >= 0.0 && credit <= 12.0)){
+                            System.out.println("Illegal course credit");
+                            continue;
+                        }
+                    } catch (Exception ex) {
+                        System.out.println("Illegal course credit");
+                        continue;
+                    }
+                    //学时解析
+                    int period;
+                    try {
+                        period = Integer.parseInt(parts[4]);
+                        if(!(period > 0 && period <= 1280)){
+                            System.out.println("Illegal course period");
+                            continue;
+                        }
+                    } catch (Exception ex) {
+                        System.out.println("Illegal course period");
+                        continue;
+                    }
+                    //所有检查通过
+                    int idNum = ++courseCounter;
+                    String courseId = "C-" + idNum;
+                    Course course = new Course(courseId, courseName, currentUser, day, start, end, credit, period);
+                    courses.put(courseId, course);
+                    System.out.println("Create course success (courseId: " + courseId + ")");
+                    continue;
+                }
                 // 处理其他合法命令
                 System.out.println("命令：" + command);
                 if (argCount > 0) {
