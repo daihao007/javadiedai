@@ -269,7 +269,7 @@ public class Test {
                     //时间冲突
                     boolean conflict = courses.values().stream()
                             .filter(c -> curUser.getId().equals(c.getTeacherId()))
-                            .anyMatch(c -> c.getDay() == day && !(end <= c.getStart() || start >= c.getEnd()));
+                            .anyMatch(c -> c.getDay() == day && !(end < c.getStart() || start > c.getEnd()));
                     if(conflict){
                         System.out.println("Course time conflicts");
                         continue;
@@ -313,7 +313,7 @@ public class Test {
                         continue;
                     }
                     User cur=users.get(currentUser);
-                    DecimalFormat df=new DecimalFormat("#.#");
+                    DecimalFormat df=new DecimalFormat("0.0");
                     if(argCount==0){
                         //无参数情况
                         if(cur==null){
@@ -566,22 +566,18 @@ public class Test {
             }
         }
     }
-    private static Role parseRole(String s){
-        if(s==null) return null;
-        String t=s.trim().toLowerCase();
-        if(t.equals("administrator")){
-            return Role.ADMIN;
-        }
-        if(t.equals("teacher")){
-            return Role.TEACHER;
-        }
-        if(t.equals("student")){
-            return Role.STUDENT;
-        }
+    private static Role parseRole(String s) {
+        if (s == null) return null;
+        s = s.trim().toUpperCase(); // 统一转大写并去除前后空格
         try {
-            return Role.valueOf(s.toUpperCase());
+            return Role.valueOf(s); // 直接尝试枚举值匹配（如"ADMIN"、"TEACHER"、"STUDENT"）
         } catch (Exception e) {
-            return null;
+            // 兼容小写别名
+            String lower = s.toLowerCase();
+            if (lower.equals("administrator")) return Role.ADMIN;
+            if (lower.equals("teacher")) return Role.TEACHER;
+            if (lower.equals("student")) return Role.STUDENT;
+            return null; // 确实非法的身份
         }
     }
     private static boolean isValidName(String name){
@@ -637,7 +633,7 @@ public class Test {
 
     //把课程学分格式化为“最多保留一位小数”的字符串，用于输出
     private static String formatCredit(double credit){
-        DecimalFormat df =new DecimalFormat("#.#");
+        DecimalFormat df =new DecimalFormat("0.0");
         return df.format(credit);
     }
 
