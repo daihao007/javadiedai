@@ -4,10 +4,14 @@ import src.User;
 
 import java.util.*;
 import java.text.DecimalFormat;
+import java.util.zip.CheckedOutputStream;
 
 public class Test {
     private static final Map<String,User> users=new HashMap<>();
     private static final Map<String, Course> courses=new HashMap<>();
+    private static final Map<String,Set<String>> studentCourses=new HashMap<>();
+    private static final Map<String,Set<String>> courseStudents=new HashMap<>();
+    private static final int COURSE_CAPACITY=30;
     private static  int courseCounter=0;
     public static void main(String[] args) {
         // 定义已知命令及其参数数量范围
@@ -18,18 +22,25 @@ public class Test {
         commandArgsRange.put("register",new int[]{5,5});
         commandArgsRange.put("login",new int[]{2,2});
         commandArgsRange.put("logout",new int[]{0,1});
-        commandArgsRange.put("printinfo",new int[]{0,1});
+        commandArgsRange.put("printInfo",new int[]{0,1});
         commandArgsRange.put("createCourse",new int[]{4,4});
+        commandArgsRange.put("listCourse",new int[]{0,1});
+        commandArgsRange.put("selectCourse",new int[]{1,1});
+        commandArgsRange.put("cancelCourse",new int[]{1,1});
+
 
         List<String> loggedInUsers = new ArrayList<>();
         String currentUser=null;
 
         Scanner scanner = new Scanner(System.in);
-        System.out.println("请输入命令和参数：");
+        //System.out.println("请输入命令和参数：");
 
         while (true) {
             // 等待用户输入
             String input = scanner.nextLine().trim();
+            if(input.isEmpty()){
+                continue;
+            }
             String[] parts = input.split("\\s+");
 
             if (parts.length > 0) {
@@ -174,7 +185,7 @@ public class Test {
                     }
                 }
 
-                if("printinfo".equals(command)){
+                if("printInfo".equals(command)){
                     if(argCount==0){
                         if(currentUser==null){
                             System.out.println("No one is online");
@@ -258,7 +269,7 @@ public class Test {
                     //时间冲突
                     boolean conflict = courses.values().stream()
                             .filter(c -> curUser.getId().equals(c.getTeacherId()))
-                            .anyMatch(c -> c.getDay() == day && !(end < c.getStart() || start > c.getEnd()));
+                            .anyMatch(c -> c.getDay() == day && !(end <= c.getStart() || start >= c.getEnd()));
                     if(conflict){
                         System.out.println("Course time conflicts");
                         continue;
@@ -295,6 +306,251 @@ public class Test {
                     System.out.println("Create course success (courseId: " + courseId + ")");
                     continue;
                 }
+
+                if("listCourse".equals(command)){
+                    if(currentUser==null){
+                        System.out.println("No one is online");
+                        continue;
+                    }
+                    User cur=users.get(currentUser);
+                    DecimalFormat df=new DecimalFormat("#.#");
+                    if(argCount==0){
+                        //无参数情况
+                        if(cur==null){
+                            System.out.println("No one is online");
+                            continue;
+                        }
+                        //教师查看自己课程
+                        if(cur.getRole()==Role.TEACHER){
+                            List<Course> my=new ArrayList<>();
+                            for(Course c:courses.values()){
+                                if(cur.getId().equals(c.getTeacherId())){
+                                    my.add(c);
+                                }
+                            }
+                            if(my.isEmpty()){
+                                System.out.println("Course does not exist");
+                                continue;
+                            }
+                            my.sort(Comparator.comparingInt((c->parseCourseNum(c.getId()))));
+                            for(Course c:my){
+                                System.out.printf("%s %s %d_%d-%d %s %d%n",c.getId(),c.getName(),c.getDay(),c.getStart(),c.getEnd(),df.format(c.getCredit()),c.getPeriod());
+                            }
+                            System.out.println("List course success");
+                            continue;
+                        }
+                        else{
+                            if(courses.isEmpty()){
+                                System.out.println("Course does not exist");
+                                continue;
+                            }
+                            List<Course> all =new ArrayList<>(courses.values());
+                            all.sort((a,b)->{
+                                String ta=Optional.ofNullable(users.get(a.getTeacherId())).map(User::getUsername).orElse("");
+                                String tb = Optional.ofNullable(users.get(b.getTeacherId())).map(User::getUsername).orElse("");
+                                int cmp = ta.compareTo(tb);
+                                if (cmp != 0) return cmp;
+                                return Integer.compare(parseCourseNum(a.getId()), parseCourseNum(b.getId()));
+                            });
+                            for(Course c:all){
+                                String tName = Optional.ofNullable(users.get(c.getTeacherId())).map(User::getUsername).orElse("");
+                                System.out.printf("%s %s %s %d_%d-%d %s %d%n",
+                                        tName,
+                                        c.getId(),
+                                        c.getName(),
+                                        c.getDay(),c.getStart(),c.getEnd(),
+                                        df.format(c.getCredit()),
+                                        c.getPeriod());
+                            }
+                            System.out.println("List course success");
+                            continue;
+                        }
+                    }
+                    //有参数
+                    else{
+                        if(cur ==null){
+                            System.out.println("No one is online");
+                            continue;
+                        }
+                        if(cur.getRole()!=Role.ADMIN){
+                            System.out.println("Permission denied");
+                            continue;
+                        }
+                        String target=parts[1];
+                        if(!isValidIdGeneral(target)){
+                            System.out.println("Illegal user id");
+                            continue;
+                        }
+                        if(!users.containsKey(target)){
+                            System.out.println("User does not exist");
+                            continue;
+                        }
+                        User targetUser=users.get(target);
+                        if(targetUser.getRole()!=Role.TEACHER){
+                            System.out.println("User id does not belong to a Teacher");
+                            continue;
+                        }
+                        List<Course> tCourses=new ArrayList<>();
+                        for(Course c:courses.values()){
+                            if(target.equals(c.getTeacherId())) tCourses.add(c);
+                        }
+                        if(tCourses.isEmpty()){
+                            System.out.println("Course does not exist");
+                            continue;
+                        }
+                        tCourses.sort(Comparator.comparingInt(c-> parseCourseNum(c.getId())));
+                        for(Course c:tCourses){
+                            System.out.printf("%s %s %s %d_%d-%d %s %d%n",
+                                    targetUser.getUsername(),
+                                    c.getId(),
+                                    c.getName(),
+                                    c.getDay(), c.getStart(), c.getEnd(),
+                                    df.format(c.getCredit()),
+                                    c.getPeriod());
+                        }
+                        System.out.println("List course success");
+                        continue;
+                    }
+                }
+
+                if("selectCourse".equals(command)){
+                    if(currentUser==null){
+                        System.out.println("No one is online");
+                        continue;
+                    }
+                    User cur =users.get(currentUser);
+                    if(cur==null||cur.getRole()!=Role.STUDENT){
+                        System.out.println("Permission denied");
+                        continue;
+                    }
+                    String courseId=parts[1];
+                    if(courseId==null || !courseId.matches("^C-\\d+$")){
+                        System.out.println("Illegal course id");
+                        continue;
+                    }
+                    try{
+                        int num=Integer.parseInt((courseId.substring(2)));
+                        if(num<=0){
+                            System.out.println("Illegal course id");
+                            continue;
+                        }
+                    }catch (Exception e){
+                        System.out.println("Illegal course id");
+                        continue;
+                    }
+
+                    if(!courses.containsKey(courseId)){
+                        System.out.println("Course does not exist");
+                        continue;
+                    }
+                    Course target=courses.get(courseId);
+                    Set<String> students=courseStudents.getOrDefault(courseId,Collections.emptySet());
+                    if(students.size()>=COURSE_CAPACITY){
+                        System.out.println("Course is full");
+                        continue;
+                    }
+                    boolean conflict=false;
+                    Set<String> myCourses=studentCourses.getOrDefault(currentUser,Collections.emptySet());
+                    for(String cid:myCourses){
+                        Course c=courses.get(cid);
+                        if(c==null) continue;
+                        if(c.getDay()==target.getDay()&& !(target.getEnd()<c.getStart()||target.getStart()>c.getEnd())){
+                            conflict=true;
+                            break;
+                        }
+                    }
+                    if(conflict){
+                        System.out.println("Course time conflicts");
+                        continue;
+                    }
+                    studentCourses.computeIfAbsent(currentUser,k->new HashSet<>()).add(courseId);
+                    courseStudents.computeIfAbsent(courseId,k->new HashSet<>()).add(currentUser);
+                    System.out.println("Select course success (courseId: "+courseId+")");
+                    continue;
+                }
+
+                if("cancelCourse".equals(command)){
+                    if(currentUser==null){
+                        System.out.println("No one is online");
+                        continue;
+                    }
+                    User cur=users.get(currentUser);
+                    if(cur==null){
+                        System.out.println("No one is online");
+                        continue;
+                    }
+                    String courseId=parts[1];
+                    if(courseId==null||!courseId.matches("^C-\\d+$")){
+                        System.out.println("Illegal course id");
+                        continue;
+                    }
+                    try{
+                        int num=Integer.parseInt((courseId.substring(2)));
+                        if(num<=0){
+                            System.out.println("Illegal course id");
+                            continue;
+                        }
+                    }catch (Exception e){
+                        System.out.println("Illegal course id");
+                        continue;
+                    }
+                    if(cur.getRole()==Role.STUDENT){
+                        Set<String> myCourses=studentCourses.getOrDefault(courseId,Collections.emptySet());
+                        if(!courses.containsKey(courseId)||!myCourses.contains(courseId)){
+                            System.out.println("Course does not exist");
+                            continue;
+                        }
+                        Set<String> updated =new HashSet<>(myCourses);
+                        updated.remove(courseId);
+                        if(updated.isEmpty()) studentCourses.remove(currentUser);
+                        else studentCourses.put(currentUser,updated);
+                        Set<String> studs=courseStudents.getOrDefault(courseId,Collections.emptySet());
+                        if(!studs.isEmpty()){
+                            Set<String> s2=new HashSet<>(studs);
+                            s2.remove(currentUser);
+                            if(s2.isEmpty()){
+                                courseStudents.remove(courseId);
+                            }
+                            else{
+                                courseStudents.put(currentUser,s2);
+                            }
+                        }
+                        System.out.println("Cancel course success (courseId: "+courseId+")");
+                        continue;
+                    }
+                    if(cur.getRole()!=Role.TEACHER && cur.getRole()!=Role.ADMIN){
+                        System.out.println("Permission denied");
+                        continue;
+                    }
+                    if(!courses.containsKey(courseId)){
+                        System.out.println("Course does not exist");
+                        continue;
+                    }
+                    Course target=courses.get(courseId);
+                    if(cur.getRole()==Role.TEACHER&&!currentUser.equals(target.getTeacherId())){
+                        System.out.println("Course does not exist");
+                        continue;
+                    }
+                    Set<String> enrolled =courseStudents.getOrDefault(courseId,Collections.emptySet());
+                    for(String sid:new HashSet<>(enrolled)){
+                        Set<String>sc=studentCourses.getOrDefault(courseId,Collections.emptySet());
+                        if(!sc.isEmpty()){
+                            Set<String> newSc=new HashSet<>(sc);
+                            newSc.remove(courseId);
+                            if(newSc.isEmpty()){
+                                studentCourses.remove(sid);
+                            }
+                            else{
+                                studentCourses.put(sid,newSc);
+                            }
+                        }
+                    }
+                    courseStudents.remove(courseId);
+                    courses.remove(courseId);
+                    System.out.println("Cancel course success (courseId: "+courseId+")");
+                    continue;
+                }
+
                 // 处理其他合法命令
                 System.out.println("命令：" + command);
                 if (argCount > 0) {
@@ -376,6 +632,29 @@ public class Test {
             case TEACHER:return "Teacher";
             case STUDENT:return "Student";
             default:return role.name();
+        }
+    }
+
+    //把课程学分格式化为“最多保留一位小数”的字符串，用于输出
+    private static String formatCredit(double credit){
+        DecimalFormat df =new DecimalFormat("#.#");
+        return df.format(credit);
+    }
+
+    //从课程 ID 中提取用于排序的整数编号（将课程编号 "C-1", "C-12" 等按数值大小排序），并在无法解析时返回一个很大的值以便把异常/无编号的课程排在后面。
+    private static int parseCourseNum(String courseId){
+        if(courseId==null){
+            return Integer.MAX_VALUE;
+        }
+        try {
+            if(courseId.startsWith("C-")){
+                return Integer.parseInt(courseId.substring(2));
+            }
+            else{
+                return Integer.parseInt(courseId.replaceAll("\\D",""));
+            }
+        }catch (Exception e){
+            return Integer.MAX_VALUE;
         }
     }
 }
